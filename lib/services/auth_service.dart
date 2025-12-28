@@ -9,19 +9,48 @@ class AuthService {
   // Login
   Future<UserModel?> login(String email, String password) async {
     try {
-      final credential = await _auth.signInWithEmailAndPassword(
+      // Firebase Auth ile giriş yap
+      await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-
-      if (credential.user != null) {
-        return await _getUserData(credential.user!.uid);
-      }
-      return null;
     } catch (e) {
-      // Firebase hatası yerine genel hata fırlat
-      throw Exception('Login failed: ${e.toString()}');
+      // PigeonUserDetails hatası için - giriş başarılı olmuş olabilir
+      if (!e.toString().contains('PigeonUserDetails')) {
+        throw Exception('Login failed: ${e.toString()}');
+      }
     }
+
+    // Giriş başarılı olduktan sonra currentUser'ı kullan
+    final firebaseUser = _auth.currentUser;
+    
+    if (firebaseUser != null) {
+      try {
+        // Önce Firestore'dan kullanıcı bilgilerini al
+        UserModel? user = await _getUserData(firebaseUser.uid);
+        
+        // Eğer Firestore'da kullanıcı yoksa, yeni kayıt oluştur
+        if (user == null) {
+          user = UserModel(
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName ?? email.split('@')[0],
+            email: email,
+            department: 'Genel',
+            role: UserRole.user,
+            createdAt: DateTime.now(),
+          );
+          
+          // Firestore'a kaydet
+          await _firestore.collection('users').doc(user.id).set(user.toJson());
+        }
+        
+        return user;
+      } catch (e) {
+        throw Exception('Failed to get user data: ${e.toString()}');
+      }
+    }
+    
+    throw Exception('Login failed: User not found after authentication');
   }
 
   // Register
@@ -32,14 +61,18 @@ class AuthService {
     required String department,
   }) async {
     try {
-      final credential = await _auth.createUserWithEmailAndPassword(
+      // Firebase Auth ile kayıt ol
+      await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      if (credential.user != null) {
+      // Kayıt başarılı olduktan sonra currentUser'ı kullan
+      final firebaseUser = _auth.currentUser;
+      
+      if (firebaseUser != null) {
         final user = UserModel(
-          id: credential.user!.uid,
+          id: firebaseUser.uid,
           name: name,
           email: email,
           department: department,

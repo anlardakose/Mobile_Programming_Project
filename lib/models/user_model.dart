@@ -22,16 +22,33 @@ class UserModel {
 
   // JSON'dan UserModel oluştur
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    // createdAt için farklı formatları destekle
+    DateTime createdAtDate;
+    if (json['createdAt'] is String) {
+      createdAtDate = DateTime.parse(json['createdAt'] as String);
+    } else if (json['createdAt'] != null) {
+      // Firestore Timestamp
+      createdAtDate = (json['createdAt'] as dynamic).toDate();
+    } else {
+      createdAtDate = DateTime.now();
+    }
+
+    // role için farklı formatları destekle
+    UserRole userRole = UserRole.user;
+    if (json['role'] != null) {
+      final roleStr = json['role'].toString();
+      if (roleStr == 'admin' || roleStr == 'UserRole.admin') {
+        userRole = UserRole.admin;
+      }
+    }
+
     return UserModel(
       id: json['id'] as String,
-      name: json['name'] as String,
-      email: json['email'] as String,
-      department: json['department'] as String,
-      role: UserRole.values.firstWhere(
-        (e) => e.toString() == json['role'],
-        orElse: () => UserRole.user,
-      ),
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      name: json['name'] as String? ?? 'User',
+      email: json['email'] as String? ?? '',
+      department: json['department'] as String? ?? 'Genel',
+      role: userRole,
+      createdAt: createdAtDate,
     );
   }
 

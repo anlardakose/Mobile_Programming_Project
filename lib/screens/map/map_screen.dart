@@ -1,23 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-
-class MapMarker {
-  final double latitude;
-  final double longitude;
-  final String title;
-
-  MapMarker({
-    required this.latitude,
-    required this.longitude,
-    required this.title,
-  });
-}
+import 'package:provider/provider.dart';
+import '../../providers/notification_provider.dart';
+import '../../models/notification_model.dart';
+import '../notification/notification_detail_screen.dart';
 
 class MapScreen extends StatefulWidget {
   final double? initialLatitude;
   final double? initialLongitude;
-  final List<MapMarker> markers;
   final bool allowSelection;
   final Function(double, double)? onLocationSelected;
 
@@ -25,7 +16,6 @@ class MapScreen extends StatefulWidget {
     super.key,
     this.initialLatitude,
     this.initialLongitude,
-    this.markers = const [],
     this.allowSelection = false,
     this.onLocationSelected,
   });
@@ -38,6 +28,7 @@ class _MapScreenState extends State<MapScreen> {
   GoogleMapController? _mapController;
   LatLng? _selectedLocation;
   Position? _currentPosition;
+  NotificationModel? _selectedNotification;
 
   @override
   void initState() {
@@ -48,6 +39,13 @@ class _MapScreenState extends State<MapScreen> {
         widget.initialLatitude!,
         widget.initialLongitude!,
       );
+    }
+    
+    // Bildirimleri yükle (eğer seçim modu değilse)
+    if (!widget.allowSelection) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context.read<NotificationProvider>().loadNotifications();
+      });
     }
   }
 
@@ -101,36 +99,107 @@ class _MapScreenState extends State<MapScreen> {
     return const LatLng(39.9033, 41.2542);
   }
 
-  Set<Marker> get _markers {
+  // Bildirim türüne göre pin rengi
+  BitmapDescriptor _getMarkerColor(NotificationType type) {
+    switch (type) {
+      case NotificationType.health:
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+      case NotificationType.safety:
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+      case NotificationType.environment:
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+      case NotificationType.lostFound:
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
+      case NotificationType.technical:
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
+    }
+  }
+
+  // Bildirim türüne göre ikon
+  IconData _getTypeIcon(NotificationType type) {
+    switch (type) {
+      case NotificationType.health:
+        return Icons.medical_services;
+      case NotificationType.safety:
+        return Icons.security;
+      case NotificationType.environment:
+        return Icons.eco;
+      case NotificationType.lostFound:
+        return Icons.search;
+      case NotificationType.technical:
+        return Icons.build;
+    }
+  }
+
+  // Bildirim türüne göre renk
+  Color _getTypeColor(NotificationType type) {
+    switch (type) {
+      case NotificationType.health:
+        return Colors.red;
+      case NotificationType.safety:
+        return Colors.orange;
+      case NotificationType.environment:
+        return Colors.green;
+      case NotificationType.lostFound:
+        return Colors.blue;
+      case NotificationType.technical:
+        return Colors.purple;
+    }
+  }
+
+  // Ne kadar önce oluşturulduğunu hesapla
+  String _getTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays} gün önce';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} saat önce';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} dakika önce';
+    } else {
+      return 'Az önce';
+    }
+  }
+
+  Set<Marker> _buildMarkers(List<NotificationModel> notifications) {
     final Set<Marker> markers = {};
 
-    // Widget'tan gelen marker'lar
-    for (int i = 0; i < widget.markers.length; i++) {
-      final marker = widget.markers[i];
-      markers.add(
-        Marker(
-          markerId: MarkerId('marker_$i'),
-          position: LatLng(marker.latitude, marker.longitude),
-          infoWindow: InfoWindow(title: marker.title),
-        ),
-      );
+    // Eğer seçim modundaysa, sadece seçilen konumu göster
+    if (widget.allowSelection) {
+      if (_selectedLocation != null) {
+        markers.add(
+          Marker(
+            markerId: const MarkerId('selected_location'),
+            position: _selectedLocation!,
+            draggable: true,
+            onDragEnd: (newPosition) {
+              setState(() {
+                _selectedLocation = newPosition;
+              });
+              widget.onLocationSelected?.call(
+                newPosition.latitude,
+                newPosition.longitude,
+              );
+            },
+          ),
+        );
+      }
+      return markers;
     }
 
-    // Seçilen konum marker'ı (eğer seçim modundaysa)
-    if (widget.allowSelection && _selectedLocation != null) {
+    // Bildirimleri marker olarak ekle
+    for (final notification in notifications) {
       markers.add(
         Marker(
-          markerId: const MarkerId('selected_location'),
-          position: _selectedLocation!,
-          draggable: true,
-          onDragEnd: (newPosition) {
+          markerId: MarkerId(notification.id),
+          position: LatLng(notification.latitude, notification.longitude),
+          icon: _getMarkerColor(notification.type),
+          onTap: () {
             setState(() {
-              _selectedLocation = newPosition;
+              _selectedNotification = notification;
             });
-            widget.onLocationSelected?.call(
-              newPosition.latitude,
-              newPosition.longitude,
-            );
           },
         ),
       );
@@ -141,21 +210,26 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        GoogleMap(
-          initialCameraPosition: CameraPosition(
-            target: _initialCameraPosition,
-            zoom: 15,
-          ),
-          markers: _markers,
-          myLocationButtonEnabled: true,
-          myLocationEnabled: true,
-          onMapCreated: (controller) {
-            _mapController = controller;
-          },
-          onTap: widget.allowSelection
-              ? (LatLng location) {
+    return Consumer<NotificationProvider>(
+      builder: (context, provider, _) {
+        final notifications = widget.allowSelection ? [] : provider.notifications;
+        
+        return Stack(
+          children: [
+            // Harita
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _initialCameraPosition,
+                zoom: 15,
+              ),
+              markers: _buildMarkers(notifications.cast<NotificationModel>()),
+              myLocationButtonEnabled: true,
+              myLocationEnabled: true,
+              onMapCreated: (controller) {
+                _mapController = controller;
+              },
+              onTap: (LatLng location) {
+                if (widget.allowSelection) {
                   setState(() {
                     _selectedLocation = location;
                   });
@@ -163,33 +237,226 @@ class _MapScreenState extends State<MapScreen> {
                     location.latitude,
                     location.longitude,
                   );
+                } else {
+                  // Haritaya tıklandığında bilgi kartını kapat
+                  setState(() {
+                    _selectedNotification = null;
+                  });
                 }
-              : null,
+              },
+            ),
+            
+            // Seçim modu için konum seç butonu
+            if (widget.allowSelection)
+              Positioned(
+                bottom: 16,
+                left: 16,
+                right: 16,
+                child: ElevatedButton.icon(
+                  onPressed: _selectedLocation != null
+                      ? () {
+                          widget.onLocationSelected?.call(
+                            _selectedLocation!.latitude,
+                            _selectedLocation!.longitude,
+                          );
+                          Navigator.of(context).pop({
+                            'latitude': _selectedLocation!.latitude,
+                            'longitude': _selectedLocation!.longitude,
+                          });
+                        }
+                      : null,
+                  icon: const Icon(Icons.check),
+                  label: const Text('Bu Konumu Seç'),
+                ),
+              ),
+            
+            // Bildirim bilgi kartı (seçim modu değilse)
+            if (!widget.allowSelection && _selectedNotification != null)
+              Positioned(
+                bottom: 16,
+                left: 16,
+                right: 16,
+                child: _buildInfoCard(_selectedNotification!),
+              ),
+            
+            // Harita açıklaması (legend)
+            if (!widget.allowSelection)
+              Positioned(
+                top: 16,
+                left: 16,
+                child: _buildLegend(),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Pin bilgi kartı
+  Widget _buildInfoCard(NotificationModel notification) {
+    return Card(
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Başlık ve tür
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _getTypeColor(notification.type).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    _getTypeIcon(notification.type),
+                    color: _getTypeColor(notification.type),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        notification.typeDisplayName,
+                        style: TextStyle(
+                          color: _getTypeColor(notification.type),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        notification.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                // Kapat butonu
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    setState(() {
+                      _selectedNotification = null;
+                    });
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Zaman bilgisi
+            Row(
+              children: [
+                Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                const SizedBox(width: 4),
+                Text(
+                  _getTimeAgo(notification.createdAt),
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Detayı Gör butonu
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => NotificationDetailScreen(
+                        notificationId: notification.id,
+                      ),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _getTypeColor(notification.type),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Detayı Gör'),
+              ),
+            ),
+          ],
         ),
-        if (widget.allowSelection)
-          Positioned(
-            bottom: 16,
-            left: 16,
-            right: 16,
-            child: ElevatedButton.icon(
-              onPressed: _selectedLocation != null
-                  ? () {
-                      widget.onLocationSelected?.call(
-                        _selectedLocation!.latitude,
-                        _selectedLocation!.longitude,
-                      );
-                      Navigator.of(context).pop({
-                        'latitude': _selectedLocation!.latitude,
-                        'longitude': _selectedLocation!.longitude,
-                      });
-                    }
-                  : null,
-              icon: const Icon(Icons.check),
-              label: const Text('Select This Location'),
+      ),
+    );
+  }
+
+  // Harita açıklama kartı (legend)
+  Widget _buildLegend() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Bildirim Türleri',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildLegendItem(NotificationType.health, 'Sağlık'),
+            _buildLegendItem(NotificationType.safety, 'Güvenlik'),
+            _buildLegendItem(NotificationType.environment, 'Çevre'),
+            _buildLegendItem(NotificationType.lostFound, 'Kayıp-Buluntu'),
+            _buildLegendItem(NotificationType.technical, 'Teknik'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(NotificationType type, String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: _getTypeColor(type),
+              shape: BoxShape.circle,
             ),
           ),
-      ],
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 }
-
