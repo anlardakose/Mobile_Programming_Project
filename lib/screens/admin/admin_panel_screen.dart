@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/notification_provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../models/notification_model.dart';
 import '../notification/notification_detail_screen.dart';
 import '../notification/create_emergency_notification_screen.dart';
