@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../models/notification_model.dart';
 import 'notification_detail_screen.dart';
 
@@ -151,6 +152,14 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                     context.read<NotificationProvider>().setFilterOpenOnly(selected);
                   },
                 ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  label: const Text('Following'),
+                  selected: context.watch<NotificationProvider>().filterFollowingOnly,
+                  onSelected: (selected) {
+                    context.read<NotificationProvider>().setFilterFollowingOnly(selected);
+                  },
+                ),
               ],
             ),
           ),
@@ -164,7 +173,8 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final notifications = provider.filteredNotifications;
+              final userId = context.read<AuthProvider>().currentUser?.id;
+              final notifications = provider.getFilteredNotifications(userId);
 
               if (notifications.isEmpty) {
                 return Center(

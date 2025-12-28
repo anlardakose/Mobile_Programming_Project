@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 enum UserRole {
   user,
   admin,
@@ -36,8 +38,8 @@ class UserModel {
     // role için farklı formatları destekle
     UserRole userRole = UserRole.user;
     if (json['role'] != null) {
-      final roleStr = json['role'].toString();
-      if (roleStr == 'admin' || roleStr == 'UserRole.admin') {
+      final roleStr = json['role'].toString().toLowerCase();
+      if (roleStr == 'admin' || roleStr.contains('admin')) {
         userRole = UserRole.admin;
       }
     }
@@ -59,8 +61,8 @@ class UserModel {
       'name': name,
       'email': email,
       'department': department,
-      'role': role.toString(),
-      'createdAt': createdAt.toIso8601String(),
+      'role': role == UserRole.admin ? 'admin' : 'user',
+      'createdAt': Timestamp.fromDate(createdAt),
     };
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
@@ -10,14 +11,12 @@ class MapScreen extends StatefulWidget {
   final double? initialLatitude;
   final double? initialLongitude;
   final bool allowSelection;
-  final Function(double, double)? onLocationSelected;
 
   const MapScreen({
     super.key,
     this.initialLatitude,
     this.initialLongitude,
     this.allowSelection = false,
-    this.onLocationSelected,
   });
 
   @override
@@ -33,7 +32,11 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    _getCurrentLocation();
+    
+    // Varsayılan konumu hemen ayarla
+    _selectedLocation = const LatLng(39.9033, 41.2542); // Atatürk Üniversitesi
+    
+    // Eğer initial konum varsa onu kullan
     if (widget.initialLatitude != null && widget.initialLongitude != null) {
       _selectedLocation = LatLng(
         widget.initialLatitude!,
@@ -41,34 +44,63 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
     
+    // Konum almayı dene (arka planda)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _getCurrentLocation();
+    });
+    
     // Bildirimleri yükle (eğer seçim modu değilse)
     if (!widget.allowSelection) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<NotificationProvider>().loadNotifications();
+        if (mounted) {
+          context.read<NotificationProvider>().loadNotifications();
+        }
       });
     }
   }
 
   Future<void> _getCurrentLocation() async {
+    if (!mounted) return;
+    
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        return;
-      }
-
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          // İzin reddedildi, varsayılan konumu kullan
+          if (mounted) {
+            _setDefaultLocation();
+          }
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
+        // İzin kalıcı olarak reddedildi, varsayılan konumu kullan
+        if (mounted) {
+          _setDefaultLocation();
+        }
         return;
       }
 
-      Position position = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+
+      // Konum almayı dene
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          // Timeout oldu, varsayılan konumu kullan
+          if (mounted) {
+            _setDefaultLocation();
+          }
+          throw TimeoutException('Location timeout');
+        },
+      );
+      
+      if (!mounted) return;
+      
       setState(() {
         _currentPosition = position;
         if (_selectedLocation == null && widget.initialLatitude == null) {
@@ -76,24 +108,49 @@ class _MapScreenState extends State<MapScreen> {
         }
       });
 
-      if (_mapController != null) {
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLng(
-            LatLng(position.latitude, position.longitude),
-          ),
-        );
-      }
+      // Güncel konum alındı ama kamerayı hareket ettirme
+      // Sadece marker göster, harita Atatürk Üniversitesi'nde kalsın
+      // Kullanıcı isterse "My Location" butonuna basabilir
     } catch (e) {
-      // Hata durumunda sessizce devam et
+      // Hata durumunda varsayılan konumu kullan
+      if (mounted) {
+        _setDefaultLocation();
+      }
     }
   }
 
+  void _setDefaultLocation() {
+    if (!mounted) return;
+    
+    // Varsayılan konum: Atatürk Üniversitesi
+    const defaultLat = 39.9033;
+    const defaultLng = 41.2542;
+    
+    setState(() {
+      if (_selectedLocation == null && widget.initialLatitude == null) {
+        _selectedLocation = const LatLng(defaultLat, defaultLng);
+      }
+    });
+
+    // Harita kontrolü varsa kamerayı hareket ettir
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_mapController != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            const LatLng(defaultLat, defaultLng),
+            15,
+          ),
+        );
+      }
+    });
+  }
+
   LatLng get _initialCameraPosition {
+    // İlk açılışta her zaman Atatürk Üniversitesi'ne odaklan
+    // Güncel konum alınırsa sadece marker gösterilir, kamerayı hareket ettirme
     if (widget.initialLatitude != null && widget.initialLongitude != null) {
       return LatLng(widget.initialLatitude!, widget.initialLongitude!);
-    }
-    if (_currentPosition != null) {
-      return LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
     }
     // Varsayılan konum (Atatürk Üniversitesi yaklaşık koordinatları)
     return const LatLng(39.9033, 41.2542);
@@ -168,25 +225,36 @@ class _MapScreenState extends State<MapScreen> {
 
     // Eğer seçim modundaysa, sadece seçilen konumu göster
     if (widget.allowSelection) {
-      if (_selectedLocation != null) {
-        markers.add(
-          Marker(
-            markerId: const MarkerId('selected_location'),
-            position: _selectedLocation!,
-            draggable: true,
-            onDragEnd: (newPosition) {
-              setState(() {
-                _selectedLocation = newPosition;
-              });
-              widget.onLocationSelected?.call(
-                newPosition.latitude,
-                newPosition.longitude,
-              );
-            },
-          ),
-        );
-      }
+      final location = _selectedLocation ?? _initialCameraPosition;
+      markers.add(
+        Marker(
+          markerId: const MarkerId('selected_location'),
+          position: location,
+          draggable: true,
+          onDragEnd: (newPosition) {
+            if (!mounted) return;
+            setState(() {
+              _selectedLocation = newPosition;
+            });
+          },
+        ),
+      );
       return markers;
+    }
+
+    // Güncel konumu marker olarak ekle (mavi nokta)
+    if (_currentPosition != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('current_location'),
+          position: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          infoWindow: const InfoWindow(
+            title: 'Güncel Konumum',
+            snippet: 'Şu anki konumunuz',
+          ),
+        ),
+      );
     }
 
     // Bildirimleri marker olarak ekle
@@ -197,6 +265,7 @@ class _MapScreenState extends State<MapScreen> {
           position: LatLng(notification.latitude, notification.longitude),
           icon: _getMarkerColor(notification.type),
           onTap: () {
+            if (!mounted) return;
             setState(() {
               _selectedNotification = notification;
             });
@@ -206,6 +275,12 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     return markers;
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
   }
 
   @override
@@ -224,19 +299,34 @@ class _MapScreenState extends State<MapScreen> {
               ),
               markers: _buildMarkers(notifications.cast<NotificationModel>()),
               myLocationButtonEnabled: true,
-              myLocationEnabled: true,
+              myLocationEnabled: _currentPosition != null,
+              zoomControlsEnabled: true,
+              mapToolbarEnabled: false,
+              compassEnabled: true,
+              mapType: MapType.normal,
               onMapCreated: (controller) {
                 _mapController = controller;
+                // Harita oluşturulduktan sonra kamerayı Atatürk Üniversitesi'ne odakla
+                // Güncel konum alınırsa sadece marker gösterilir, kamerayı hareket ettirme
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && _mapController != null) {
+                    // İlk açılışta her zaman Atatürk Üniversitesi'ne odaklan
+                    _mapController!.animateCamera(
+                      CameraUpdate.newLatLngZoom(
+                        const LatLng(39.9033, 41.2542), // Atatürk Üniversitesi
+                        15,
+                      ),
+                    );
+                  }
+                });
               },
               onTap: (LatLng location) {
+                if (!mounted) return;
+                
                 if (widget.allowSelection) {
                   setState(() {
                     _selectedLocation = location;
                   });
-                  widget.onLocationSelected?.call(
-                    location.latitude,
-                    location.longitude,
-                  );
                 } else {
                   // Haritaya tıklandığında bilgi kartını kapat
                   setState(() {
@@ -255,10 +345,7 @@ class _MapScreenState extends State<MapScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _selectedLocation != null
                       ? () {
-                          widget.onLocationSelected?.call(
-                            _selectedLocation!.latitude,
-                            _selectedLocation!.longitude,
-                          );
+                          if (!mounted) return;
                           Navigator.of(context).pop({
                             'latitude': _selectedLocation!.latitude,
                             'longitude': _selectedLocation!.longitude,

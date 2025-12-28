@@ -60,32 +60,74 @@ class AuthService {
     required String password,
     required String department,
   }) async {
+    User? firebaseUser;
+    
     try {
       // Firebase Auth ile kayıt ol
-      await _auth.createUserWithEmailAndPassword(
+      try {
+        final userCredential = await _auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        firebaseUser = userCredential.user;
+      } catch (e) {
+        // PigeonUserDetails hatası için - kullanıcı başarıyla oluşturulmuş olabilir
+        if (e.toString().contains('PigeonUserDetails')) {
+          // Kullanıcı oluşturulmuş, currentUser'ı kullan
+          firebaseUser = _auth.currentUser;
+        } else {
+          // Diğer hataları fırlat (FirebaseAuthException olarak)
+          rethrow;
+        }
+      }
+      
+      if (firebaseUser == null) {
+        throw Exception('User creation failed: No user returned from Firebase');
+      }
+
+      final user = UserModel(
+        id: firebaseUser.uid,
+        name: name,
         email: email,
-        password: password,
+        department: department,
+        role: UserRole.user, // Varsayılan role
+        createdAt: DateTime.now(),
       );
 
-      // Kayıt başarılı olduktan sonra currentUser'ı kullan
-      final firebaseUser = _auth.currentUser;
-      
-      if (firebaseUser != null) {
-        final user = UserModel(
-          id: firebaseUser.uid,
-          name: name,
-          email: email,
-          department: department,
-          role: UserRole.user, // Varsayılan role
-          createdAt: DateTime.now(),
-        );
-
-        // Firestore'a kullanıcı bilgilerini kaydet
-        await _firestore.collection('users').doc(user.id).set(user.toJson());
-
-        return user;
+      // Firestore'a kullanıcı bilgilerini kaydet
+      try {
+        final userData = user.toJson();
+        await _firestore.collection('users').doc(user.id).set(userData);
+      } catch (firestoreError) {
+        // Firestore kaydı başarısız olursa, Firebase Auth kullanıcısını sil
+        try {
+          await firebaseUser.delete();
+        } catch (deleteError) {
+          // Kullanıcı silme hatası - log'la ama devam et
+        }
+        throw Exception('Failed to save user data to Firestore: ${firestoreError.toString()}');
       }
-      return null;
+
+      return user;
+    } on FirebaseAuthException catch (e) {
+      String errorMessage = 'Registration failed';
+      switch (e.code) {
+        case 'weak-password':
+          errorMessage = 'The password provided is too weak.';
+          break;
+        case 'email-already-in-use':
+          errorMessage = 'An account already exists for that email.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'The email address is invalid.';
+          break;
+        case 'operation-not-allowed':
+          errorMessage = 'Email/password accounts are not enabled.';
+          break;
+        default:
+          errorMessage = 'Registration failed: ${e.message}';
+      }
+      throw Exception(errorMessage);
     } catch (e) {
       throw Exception('Registration failed: ${e.toString()}');
     }

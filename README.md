@@ -33,8 +33,7 @@ lib/
 │   └── notification_provider.dart
 ├── services/                 # Business logic
 │   ├── auth_service.dart
-│   ├── notification_service.dart
-│   └── router_service.dart
+│   └── notification_service.dart
 └── screens/                  # UI screens
     ├── splash_screen.dart
     ├── auth/

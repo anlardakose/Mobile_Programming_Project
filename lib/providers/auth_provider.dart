@@ -34,7 +34,12 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _errorMessage = e.toString();
+      // Exception mesajını temizle (Exception: prefix'ini kaldır)
+      String errorMsg = e.toString();
+      if (errorMsg.startsWith('Exception: ')) {
+        errorMsg = errorMsg.substring(11);
+      }
+      _errorMessage = errorMsg;
       _isLoading = false;
       notifyListeners();
       return false;
@@ -71,7 +76,12 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _errorMessage = e.toString();
+      // Exception mesajını temizle (Exception: prefix'ini kaldır)
+      String errorMsg = e.toString();
+      if (errorMsg.startsWith('Exception: ')) {
+        errorMsg = errorMsg.substring(11);
+      }
+      _errorMessage = errorMsg;
       _isLoading = false;
       notifyListeners();
       return false;
@@ -95,7 +105,12 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return result;
     } catch (e) {
-      _errorMessage = e.toString();
+      // Exception mesajını temizle (Exception: prefix'ini kaldır)
+      String errorMsg = e.toString();
+      if (errorMsg.startsWith('Exception: ')) {
+        errorMsg = errorMsg.substring(11);
+      }
+      _errorMessage = errorMsg;
       _isLoading = false;
       notifyListeners();
       return false;

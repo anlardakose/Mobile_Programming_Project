@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/user_model.dart';
 import '../auth/login_screen.dart';
+import 'notification_settings_screen.dart';
+import 'followed_notifications_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -111,10 +113,9 @@ class ProfileScreen extends StatelessWidget {
                       subtitle: const Text('Manage notification preferences'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () {
-                        // Notification settings ekranı eklenecek
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Notification settings coming soon'),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationSettingsScreen(),
                           ),
                         );
                       },
@@ -126,10 +127,9 @@ class ProfileScreen extends StatelessWidget {
                       subtitle: const Text('View your followed notifications'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () {
-                        // Followed notifications ekranı eklenecek
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Followed notifications coming soon'),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const FollowedNotificationsScreen(),
                           ),
                         );
                       },

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -26,6 +27,15 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
   List<File> _selectedImages = [];
   final ImagePicker _imagePicker = ImagePicker();
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Sayfa açıldığında varsayılan konumu ayarla
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setDefaultLocation();
+    });
+  }
 
   @override
   void dispose() {
@@ -71,12 +81,26 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
+      // Konum servislerinin aktif olup olmadığını kontrol et
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        if (!mounted) return;
+        _setDefaultLocation();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location services are disabled')),
+          const SnackBar(
+            content: Text('Location services are disabled. Using default location.'),
+          ),
         );
+        setState(() {
+          _isLoading = false;
+        });
         return;
       }
 
@@ -84,54 +108,110 @@ class _CreateNotificationScreenState extends State<CreateNotificationScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (!mounted) return;
+          _setDefaultLocation();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location permissions are denied')),
+            const SnackBar(
+              content: Text('Location permission denied. Using default location.'),
+            ),
           );
+          setState(() {
+            _isLoading = false;
+          });
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        _setDefaultLocation();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permissions are permanently denied')),
+          const SnackBar(
+            content: Text('Location permission permanently denied. Using default location.'),
+          ),
         );
+        setState(() {
+          _isLoading = false;
+        });
         return;
       }
 
-      Position position = await Geolocator.getCurrentPosition();
+      // Konum almayı dene (10 saniye timeout - emülatör için daha uzun)
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          if (!mounted) {
+            throw TimeoutException('Location timeout');
+          }
+          _setDefaultLocation();
+          throw TimeoutException('Location timeout');
+        },
+      );
+      
+      if (!mounted) return;
+      
       setState(() {
         _selectedLatitude = position.latitude;
         _selectedLongitude = position.longitude;
+        _isLoading = false;
       });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Location updated: ${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}'),
+          ),
+        );
+      }
     } catch (e) {
+      if (!mounted) return;
+      // Hata durumunda varsayılan konumu kullan
+      _setDefaultLocation();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to get location: $e')),
+        SnackBar(
+          content: Text('Could not get location: ${e.toString()}. Using default location.'),
+        ),
       );
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  Future<void> _selectLocationOnMap() async {
-    double? selectedLat;
-    double? selectedLng;
+  void _setDefaultLocation() {
+    if (!mounted) return;
+    
+    // Varsayılan konum: Atatürk Üniversitesi
+    const defaultLat = 39.9033;
+    const defaultLng = 41.2542;
+    
+    setState(() {
+      _selectedLatitude = defaultLat;
+      _selectedLongitude = defaultLng;
+    });
+  }
 
-    await Navigator.of(context).push(
+  Future<void> _selectLocationOnMap() async {
+    if (!mounted) return;
+    
+    final result = await Navigator.of(context).push<Map<String, double>>(
       MaterialPageRoute(
         builder: (_) => MapScreen(
           allowSelection: true,
           initialLatitude: _selectedLatitude,
           initialLongitude: _selectedLongitude,
-          onLocationSelected: (lat, lng) {
-            selectedLat = lat;
-            selectedLng = lng;
-          },
         ),
       ),
     );
 
-    if (selectedLat != null && selectedLng != null) {
+    if (!mounted) return;
+
+    if (result != null && result['latitude'] != null && result['longitude'] != null) {
       setState(() {
-        _selectedLatitude = selectedLat;
-        _selectedLongitude = selectedLng;
+        _selectedLatitude = result['latitude'];
+        _selectedLongitude = result['longitude'];
       });
     }
   }

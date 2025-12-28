@@ -25,7 +25,7 @@ class NotificationProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
 
   // Filtrelenmiş bildirimler
-  List<NotificationModel> get filteredNotifications {
+  List<NotificationModel> getFilteredNotifications(String? userId) {
     var filtered = List<NotificationModel>.from(_notifications);
 
     // Tip filtresi
@@ -46,9 +46,11 @@ class NotificationProvider extends ChangeNotifier {
       }).toList();
     }
 
-    // Takip edilenler (userId ile kontrol edilecek)
-    if (_filterFollowingOnly) {
-      // Bu kısım userId'ye göre kontrol edilecek
+    // Takip edilenler
+    if (_filterFollowingOnly && userId != null) {
+      filtered = filtered.where((n) {
+        return n.followedBy?.contains(userId) ?? false;
+      }).toList();
     }
 
     // Tarihe göre sırala (en yeni üstte)
@@ -56,6 +58,7 @@ class NotificationProvider extends ChangeNotifier {
 
     return filtered;
   }
+  
 
   Future<void> loadNotifications() async {
     _isLoading = true;
