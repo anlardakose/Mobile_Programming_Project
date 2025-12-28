@@ -287,7 +287,13 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     return Consumer<NotificationProvider>(
       builder: (context, provider, _) {
-        final notifications = widget.allowSelection ? [] : provider.notifications;
+        // "Open" ve "UnderReview" durumundaki bildirimleri haritada göster
+        final notifications = widget.allowSelection 
+            ? <NotificationModel>[] 
+            : provider.notifications
+                .where((n) => n.status == NotificationStatus.open || 
+                              n.status == NotificationStatus.underReview)
+                .toList();
         
         return Stack(
           children: [

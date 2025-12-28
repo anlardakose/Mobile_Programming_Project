@@ -132,6 +132,21 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> deleteNotification(String notificationId) async {
+    try {
+      final deleted = await _notificationService.deleteNotification(notificationId);
+      if (deleted) {
+        await loadNotifications();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   void setFilterType(NotificationType? type) {
     _filterType = type;
     notifyListeners();

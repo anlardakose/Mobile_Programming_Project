@@ -220,7 +220,86 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                               ],
                             ],
                           ),
-                          trailing: const Icon(Icons.chevron_right),
+                          trailing: PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) async {
+                              if (value == 'delete') {
+                                // Silme onayı
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Bildirimi Sil'),
+                                    content: Text(
+                                      'Bu bildirimi silmek istediğinize emin misiniz?\n\n"${notification.title}"',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(false),
+                                        child: const Text('İptal'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(true),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.red,
+                                        ),
+                                        child: const Text('Sil'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (confirm == true && mounted) {
+                                  final success = await provider.deleteNotification(notification.id);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          success
+                                              ? 'Bildirim başarıyla silindi'
+                                              : 'Bildirim silinirken bir hata oluştu',
+                                        ),
+                                        backgroundColor:
+                                            success ? Colors.green : Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              } else if (value == 'view') {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => NotificationDetailScreen(
+                                      notificationId: notification.id,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'view',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.visibility, size: 20),
+                                    SizedBox(width: 8),
+                                    Text('Detayları Gör'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete, size: 20, color: Colors.red),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Sil',
+                                      style: TextStyle(color: Colors.red),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
