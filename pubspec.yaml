@@ -36,9 +36,8 @@ dependencies:
   # Utilities
   intl: ^0.18.1
   
-  # Google APIs for FCM V1
-  googleapis: ^11.0.0
-  googleapis_auth: ^1.4.1
+  # HTTP requests
+  http: ^1.1.0
 
 dev_dependencies:
   flutter_test:
