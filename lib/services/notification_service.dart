@@ -92,6 +92,21 @@ class NotificationService {
     }
   }
 
+  // Bildirim başlığını güncelle (Admin için)
+  Future<bool> updateNotificationTitle(
+    String notificationId,
+    String newTitle,
+  ) async {
+    try {
+      await _firestore.collection('notifications').doc(notificationId).update({
+        'title': newTitle,
+      });
+      return true;
+    } catch (e) {
+      throw Exception('Failed to update notification title: ${e.toString()}');
+    }
+  }
+
   // Bildirim açıklamasını güncelle (Admin için)
   Future<bool> updateNotificationDescription(
     String notificationId,

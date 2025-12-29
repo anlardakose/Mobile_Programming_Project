@@ -2,7 +2,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:googleapis/fcm/v1.dart' as fcm_api;
+import 'package:googleapis_auth/auth_io.dart';
 
 class FCMService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -173,20 +174,21 @@ class FCMService {
     }
   }
 
-  // FCM Server Key'i Firestore'dan al
-  Future<String?> _getServerKey() async {
+  // Service Account Key'i Firestore'dan al (V1 API için)
+  Future<Map<String, dynamic>?> _getServiceAccountKey() async {
     try {
       final doc = await _firestore.collection('config').doc('fcm').get();
-      if (doc.exists && doc.data()?['serverKey'] != null) {
-        return doc.data()!['serverKey'] as String;
+      if (doc.exists && doc.data()?['serviceAccountKey'] != null) {
+        final keyString = doc.data()!['serviceAccountKey'] as String;
+        return jsonDecode(keyString) as Map<String, dynamic>;
       }
     } catch (e) {
-      debugPrint('FCM Server Key Firestore\'dan alınamadı: ${e.toString()}');
+      debugPrint('FCM Service Account Key Firestore\'dan alınamadı: ${e.toString()}');
     }
     return null;
   }
 
-  // FCM HTTP API ile push notification gönder
+  // FCM V1 API ile push notification gönder
   Future<void> _sendPushNotification({
     required String token,
     required String title,
@@ -194,43 +196,61 @@ class FCMService {
     required Map<String, dynamic> data,
   }) async {
     try {
-      // Firebase Cloud Messaging Server Key'i Firestore'dan al
-      final String? serverKey = await _getServerKey();
+      // Service Account Key'i Firestore'dan al
+      final serviceAccountKey = await _getServiceAccountKey();
       
-      if (serverKey == null || serverKey.isEmpty) {
-        debugPrint('FCM Server Key ayarlanmamış. Push notification gönderilemedi.');
-        debugPrint('Lütfen Firestore\'da "config/fcm" document\'ine "serverKey" field\'ı ekleyin.');
+      if (serviceAccountKey == null) {
+        debugPrint('FCM Service Account Key ayarlanmamış. Push notification gönderilemedi.');
+        debugPrint('Lütfen Firestore\'da "config/fcm" document\'ine "serviceAccountKey" field\'ı ekleyin (JSON string olarak).');
         return;
       }
 
-      final url = Uri.parse('https://fcm.googleapis.com/fcm/send');
+      // Service Account Credentials oluştur
+      final credentials = ServiceAccountCredentials.fromJson(serviceAccountKey);
       
-      final headers = {
-        'Content-Type': 'application/json',
-        'Authorization': 'key=$serverKey',
-      };
-
-      final payload = {
-        'to': token,
-        'notification': {
-          'title': title,
-          'body': body,
-          'sound': 'default',
-        },
-        'data': data,
-        'priority': 'high',
-      };
-
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: jsonEncode(payload),
+      // OAuth2 client oluştur
+      final scopes = ['https://www.googleapis.com/auth/firebase.messaging'];
+      final client = await clientViaServiceAccount(
+        credentials,
+        scopes,
       );
 
-      if (response.statusCode == 200) {
-        debugPrint('Push notification başarıyla gönderildi');
-      } else {
-        debugPrint('Push notification gönderilemedi: ${response.statusCode} - ${response.body}');
+      try {
+        // FCM API instance oluştur
+        final fcm = fcm_api.FcmApi(client);
+        
+        // Project ID'yi service account key'den al
+        final projectId = serviceAccountKey['project_id'] as String? ?? 
+                         'mobileprogrammingproject-bd318';
+        
+        // Message oluştur
+        final message = fcm_api.Message()
+          ..token = token
+          ..notification = (fcm_api.Notification()
+            ..title = title
+            ..body = body);
+
+        // Data field'larını ekle (string olmalı)
+        final dataMap = <String, String>{};
+        data.forEach((key, value) {
+          dataMap[key] = value.toString();
+        });
+        message.data = dataMap;
+
+        // Android config
+        message.android = (fcm_api.AndroidConfig()
+          ..priority = fcm_api.AndroidConfig_Priority.HIGH
+          ..notification = (fcm_api.AndroidNotification()
+            ..sound = 'default'));
+
+        // Bildirimi gönder
+        final projectPath = 'projects/$projectId';
+        final request = fcm_api.SendMessageRequest()..message = message;
+        final response = await fcm.projects.messages.send(request, projectPath);
+
+        debugPrint('Push notification başarıyla gönderildi: ${response.name}');
+      } finally {
+        client.close();
       }
     } catch (e) {
       debugPrint('Push notification hatası: ${e.toString()}');

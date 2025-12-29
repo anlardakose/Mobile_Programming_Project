@@ -112,6 +112,48 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> updateNotificationTitle(
+    String notificationId,
+    String newTitle,
+  ) async {
+    try {
+      final updated = await _notificationService.updateNotificationTitle(
+        notificationId,
+        newTitle,
+      );
+      if (updated) {
+        await loadNotifications();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updateNotificationDescription(
+    String notificationId,
+    String newDescription,
+  ) async {
+    try {
+      final updated = await _notificationService.updateNotificationDescription(
+        notificationId,
+        newDescription,
+      );
+      if (updated) {
+        await loadNotifications();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> followNotification(String notificationId, String userId) async {
     try {
       return await _notificationService.followNotification(notificationId, userId);
