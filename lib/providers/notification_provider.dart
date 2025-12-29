@@ -147,6 +147,46 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> createEmergencyNotification({
+    required String title,
+    required String message,
+    required String adminUserId,
+    required String adminUserName,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      _isLoading = true;
+      _errorMessage = null;
+      notifyListeners();
+
+      final created = await _notificationService.createEmergencyNotification(
+        title: title,
+        message: message,
+        adminUserId: adminUserId,
+        adminUserName: adminUserName,
+        latitude: latitude,
+        longitude: longitude,
+      );
+
+      if (created) {
+        await loadNotifications();
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      }
+
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   void setFilterType(NotificationType? type) {
     _filterType = type;
     notifyListeners();

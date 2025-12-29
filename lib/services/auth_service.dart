@@ -1,10 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
+import 'fcm_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FCMService _fcmService = FCMService();
 
   // Login
   Future<UserModel?> login(String email, String password) async {
@@ -43,6 +45,9 @@ class AuthService {
           // Firestore'a kaydet
           await _firestore.collection('users').doc(user.id).set(user.toJson());
         }
+        
+        // FCM token'ı al ve kaydet
+        await _fcmService.getTokenAndSave(user.id);
         
         return user;
       } catch (e) {
@@ -98,6 +103,9 @@ class AuthService {
       try {
         final userData = user.toJson();
         await _firestore.collection('users').doc(user.id).set(userData);
+        
+        // FCM token'ı al ve kaydet
+        await _fcmService.getTokenAndSave(user.id);
       } catch (firestoreError) {
         // Firestore kaydı başarısız olursa, Firebase Auth kullanıcısını sil
         try {

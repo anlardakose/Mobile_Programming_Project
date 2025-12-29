@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/notification_provider.dart';
 
 class CreateEmergencyNotificationScreen extends StatefulWidget {
   const CreateEmergencyNotificationScreen({super.key});
@@ -27,29 +32,97 @@ class _CreateEmergencyNotificationScreenState
       return;
     }
 
+    final authProvider = context.read<AuthProvider>();
+    final notificationProvider = context.read<NotificationProvider>();
+    final user = authProvider.currentUser;
+
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Kullanıcı bilgisi bulunamadı'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    // TODO: Emergency notification servisi eklenecek
-    // Şimdilik normal notification oluşturuluyor
-    
-    await Future.delayed(const Duration(seconds: 1)); // Simulated delay
+    try {
+      // Konum bilgisini al (izin kontrolü ile)
+      double latitude = 39.9334; // Default: Ankara koordinatları
+      double longitude = 32.8597;
 
-    if (!mounted) return;
+      try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (serviceEnabled) {
+          LocationPermission permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+          
+          if (permission == LocationPermission.whileInUse ||
+              permission == LocationPermission.always) {
+            Position position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.high,
+            );
+            latitude = position.latitude;
+            longitude = position.longitude;
+          }
+        }
+      } catch (e) {
+        // Konum alınamazsa default değerleri kullan
+        debugPrint('Konum alınamadı, default değerler kullanılıyor: $e');
+      }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Emergency alert sent to all users'),
-        backgroundColor: Colors.green,
-      ),
-    );
+      // Acil durum bildirimi oluştur ve gönder
+      final success = await notificationProvider.createEmergencyNotification(
+        title: _titleController.text.trim(),
+        message: _descriptionController.text.trim(),
+        adminUserId: user.id,
+        adminUserName: user.name,
+        latitude: latitude,
+        longitude: longitude,
+      );
 
-    setState(() {
-      _isLoading = false;
-    });
+      if (!mounted) return;
 
-    Navigator.of(context).pop();
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Acil durum bildirimi tüm kullanıcılara gönderildi'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pop();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              notificationProvider.errorMessage ?? 'Acil durum bildirimi gönderilemedi',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Hata: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override

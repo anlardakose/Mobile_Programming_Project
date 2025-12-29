@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/notification_model.dart';
+import 'fcm_service.dart';
 
 class NotificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FCMService _fcmService = FCMService();
 
   // Tüm bildirimleri al
   Future<List<NotificationModel>> getAllNotifications() async {
@@ -57,9 +59,33 @@ class NotificationService {
     NotificationStatus newStatus,
   ) async {
     try {
+      // Önce mevcut bildirimi al (eski durum ve takip eden kullanıcılar için)
+      final doc = await _firestore.collection('notifications').doc(notificationId).get();
+      if (!doc.exists) {
+        throw Exception('Notification not found');
+      }
+
+      final data = doc.data()!;
+      final oldStatus = data['status'] as String;
+      final notificationTitle = data['title'] as String;
+      final followedBy = List<String>.from(data['followedBy'] ?? []);
+
+      // Durumu güncelle
       await _firestore.collection('notifications').doc(notificationId).update({
         'status': newStatus.toString(),
       });
+
+      // Eğer durum değiştiyse ve takip eden kullanıcılar varsa, push notification gönder
+      if (oldStatus != newStatus.toString() && followedBy.isNotEmpty) {
+        await _fcmService.sendNotificationToFollowers(
+          notificationId: notificationId,
+          notificationTitle: notificationTitle,
+          oldStatus: oldStatus,
+          newStatus: newStatus.toString(),
+          followerUserIds: followedBy,
+        );
+      }
+
       return true;
     } catch (e) {
       throw Exception('Failed to update notification status: ${e.toString()}');
@@ -130,6 +156,48 @@ class NotificationService {
       return true;
     } catch (e) {
       throw Exception('Failed to delete notification: ${e.toString()}');
+    }
+  }
+
+  // Acil durum bildirimi oluştur ve tüm kullanıcılara gönder
+  Future<bool> createEmergencyNotification({
+    required String title,
+    required String message,
+    required String adminUserId,
+    required String adminUserName,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      // Acil durum bildirimi oluştur
+      final emergencyNotification = NotificationModel(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        type: NotificationType.safety, // Acil durumlar genelde güvenlik kategorisinde
+        title: title,
+        description: message,
+        createdAt: DateTime.now(),
+        status: NotificationStatus.open,
+        userId: adminUserId,
+        userName: adminUserName,
+        latitude: latitude,
+        longitude: longitude,
+        followedBy: [], // Acil durum bildirimleri otomatik olarak tüm kullanıcılara gider
+      );
+
+      // Firestore'a kaydet
+      await _firestore.collection('notifications').doc(emergencyNotification.id).set(
+            emergencyNotification.toJson(),
+          );
+
+      // Tüm kullanıcılara push notification gönder
+      await _fcmService.sendEmergencyNotificationToAllUsers(
+        title: title,
+        message: message,
+      );
+
+      return true;
+    } catch (e) {
+      throw Exception('Failed to create emergency notification: ${e.toString()}');
     }
   }
 
